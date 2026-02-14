@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model ApiService {
+  id            String   @id @default(uuid())
+  name          String
+  description   String
+  category      String
+  tags          String   // JSON array stored as string for SQLite
+  endpoint      String   // Public AXIOM gateway endpoint (auto-generated)
+  upstreamUrl   String   // Developer's real API URL
+  method        String   @default("POST") // GET | POST
+  pricePerReq   Float    // in STX
+  provider      String   // Developer wallet address (display short form)
+  providerWallet String  // Full developer wallet address
+  providerName  String?
+  status        String   @default("draft") // active | paused | draft
+  inputType     String   @default("json") // text | pdf | json | form
+  inputSchema   String?  // JSON schema string
+  authHeader    String?  // Developer's upstream auth header (secret)
+
+  // Stats
+  uptime        Float    @default(99.9)
+  totalCalls    Int      @default(0)
+  successCalls  Int      @default(0)
+  latency       Int      @default(200) // avg latency in ms
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  transactions  Transaction[]
+  callLogs      CallLog[]
+}
+
+model Transaction {
+  id              String   @id @default(uuid())
+  apiId           String
+  apiName         String
+  payerWallet     String
+  providerWallet  String
+  amountPaid      Float
+  platformFee     Float
+  providerEarning Float
+  txHash          String   @unique  // Payment proof - must be unique (non-reusable)
+  timestamp       DateTime @default(now())
+  status          String   @default("pending") // confirmed | pending | failed
+  responseCode    Int?     // 200, 402, etc.
+
+  api             ApiService @relation(fields: [apiId], references: [id])
+}
+
+model CallLog {
+  id            String   @id @default(uuid())
+  apiId         String
+  callerWallet  String?
+  requestMethod String
+  responseCode  Int      // 200, 402, 403, 500, etc.
+  latencyMs     Int
+  paid          Boolean  @default(false)
+  txHash        String?
+  timestamp     DateTime @default(now())
+
+  api           ApiService @relation(fields: [apiId], references: [id])
+}
+
+model UsedPaymentProof {
+  id        String   @id @default(uuid())
+  txHash    String   @unique
+  apiId     String
+  usedAt    DateTime @default(now())
+}
