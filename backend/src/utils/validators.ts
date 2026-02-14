@@ -13,7 +13,7 @@ export const CreateServiceSchema = z.object({
   providerWallet: z.string().min(1),
   providerName: z.string().optional(),
   status: z.enum(['active', 'paused', 'draft']).default('draft'),
-  inputType: z.enum(['text', 'pdf', 'json', 'form']).default('json'),
+  inputType: z.enum(['text', 'pdf', 'json', 'form', 'none']).default('json'),
   inputSchema: z.any().optional(),
   authHeader: z.string().optional(),
 });

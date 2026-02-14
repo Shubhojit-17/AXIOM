@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: axiom-backend
+    runtime: node
+    buildCommand: pnpm install && pnpm build
+    startCommand: pnpm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: PLATFORM_WALLET
+        sync: false
+      - key: PLATFORM_FEE_PERCENT
+        value: "10"
+      - key: ESCROW_PRIVATE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: UPSTREAM_TIMEOUT_MS
+        value: "60000"
+
+databases:
+  - name: axiom-db
+    plan: free
+    databaseName: axiom

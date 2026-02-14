@@ -6,10 +6,11 @@ import type {
   Invoice,
   GatewayExecuteResponse,
   Gateway402Response,
+  X402PaymentRequired,
   CreateServicePayload,
 } from './types';
 
-const BASE = '';
+const BASE = import.meta.env.VITE_API_URL || '';
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const wallet = localStorage.getItem('axiom_wallet') || '';
@@ -24,9 +25,22 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (res.status === 402) {
     const body = await res.json();
+
+    // Parse x402 payment-required header
+    const paymentRequiredHeader = res.headers.get('payment-required');
+    let x402: X402PaymentRequired | null = null;
+    if (paymentRequiredHeader) {
+      try {
+        x402 = JSON.parse(atob(paymentRequiredHeader));
+      } catch {
+        // Fall back to body-only data
+      }
+    }
+
     const err = new Error('Payment Required') as any;
     err.status = 402;
     err.data = body as Gateway402Response;
+    err.x402 = x402;
     throw err;
   }
 
@@ -136,4 +150,112 @@ export async function executeGateway(
     method: 'POST',
     body: JSON.stringify({ payload, paymentProof, headers }),
   });
+}
+
+/**
+ * Execute a gateway call with a file upload (e.g. PDF).
+ * Sends as multipart/form-data so the gateway can forward to upstream.
+ */
+export async function executeGatewayWithFile(
+  apiId: string,
+  file: File,
+  paymentProof?: string,
+  extraPayload?: Record<string, string>
+): Promise<GatewayExecuteResponse> {
+  const wallet = localStorage.getItem('axiom_wallet') || '';
+  const formData = new FormData();
+  formData.append('file', file);
+  if (paymentProof) formData.append('paymentProof', paymentProof);
+  if (extraPayload) {
+    Object.entries(extraPayload).forEach(([k, v]) => formData.append(k, v));
+  }
+
+  const res = await fetch(`${BASE}/gateway/${apiId}/execute`, {
+    method: 'POST',
+    headers: {
+      'x-wallet-address': wallet,
+      // Do NOT set Content-Type — browser sets it with boundary for FormData
+    },
+    body: formData,
+  });
+
+  if (res.status === 402) {
+    const body = await res.json();
+    const paymentRequiredHeader = res.headers.get('payment-required');
+    let x402: X402PaymentRequired | null = null;
+    if (paymentRequiredHeader) {
+      try { x402 = JSON.parse(atob(paymentRequiredHeader)); } catch {}
+    }
+    const err = new Error('Payment Required') as any;
+    err.status = 402;
+    err.data = body as Gateway402Response;
+    err.x402 = x402;
+    throw err;
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    const err = new Error(body.error || body.message || res.statusText) as any;
+    err.status = res.status;
+    err.data = body;
+    throw err;
+  }
+
+  return res.json();
+}
+
+// ---- x402: Poll Stacks API for a matching recent transaction ----
+const STACKS_API = 'https://api.testnet.hiro.so';
+
+export async function pollForMatchingTx(
+  senderAddress: string,
+  recipientAddress: string,
+  minAmountMicroSTX: number,
+  afterTimestamp: number
+): Promise<string | null> {
+  try {
+    // Check mempool for pending transactions
+    const mempoolRes = await fetch(
+      `${STACKS_API}/extended/v1/address/${senderAddress}/mempool?limit=10`
+    );
+    if (mempoolRes.ok) {
+      const mempoolData = await mempoolRes.json();
+      for (const tx of mempoolData.results || []) {
+        if (
+          tx.tx_type === 'token_transfer' &&
+          tx.token_transfer?.recipient_address === recipientAddress &&
+          parseInt(tx.token_transfer?.amount || '0', 10) >= minAmountMicroSTX
+        ) {
+          const txTime = new Date(tx.receipt_time_iso || tx.receipt_time * 1000).getTime();
+          if (txTime >= afterTimestamp - 30000) {
+            return tx.tx_id;
+          }
+        }
+      }
+    }
+
+    // Check confirmed transactions
+    const txRes = await fetch(
+      `${STACKS_API}/extended/v1/address/${senderAddress}/transactions?limit=5`
+    );
+    if (txRes.ok) {
+      const txData = await txRes.json();
+      for (const tx of txData.results || []) {
+        if (
+          tx.tx_type === 'token_transfer' &&
+          tx.token_transfer?.recipient_address === recipientAddress &&
+          parseInt(tx.token_transfer?.amount || '0', 10) >= minAmountMicroSTX
+        ) {
+          const txTime = (tx.burn_block_time || tx.receipt_time || 0) * 1000;
+          if (txTime >= afterTimestamp - 30000) {
+            return tx.tx_id;
+          }
+        }
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }

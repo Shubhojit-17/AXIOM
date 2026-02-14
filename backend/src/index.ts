@@ -16,6 +16,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 app.use(cors({
   origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
+  exposedHeaders: ['payment-required', 'payment-response'],
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -36,7 +37,7 @@ app.use('/gateway', gatewayRouter);
 app.use(errorHandler);
 
 // --- Start Server ---
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`
   ╔═══════════════════════════════════════════════╗
   ║         🔥 AXIOM Backend Running 🔥           ║

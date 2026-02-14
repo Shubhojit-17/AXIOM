@@ -12,14 +12,21 @@ import {
   Image,
   Loader2,
 } from 'lucide-react';
-import { getService, executeGateway } from '../lib/api';
+import { getService, executeGateway, executeGatewayWithFile } from '../lib/api';
 import type { ApiService, Gateway402Response, GatewayExecuteResponse } from '../lib/types';
 import PaymentModal from '../components/ui/PaymentModal';
 import Spinner from '../components/ui/Spinner';
 import ErrorBox from '../components/ui/ErrorBox';
 import { useWallet } from '../context/WalletContext';
 
-type ConsoleState = 'idle' | '402' | 'loading' | '200' | 'error';
+type ConsoleState = 'idle' | '402' | 'loading' | '200' | 'error' | 'refunded';
+
+interface RefundInfo {
+  txHash: string;
+  amount: number;
+  currency: string;
+  reason: string;
+}
 
 export default function Playground() {
   const { id } = useParams<{ id: string }>();
@@ -43,6 +50,7 @@ export default function Playground() {
   // Payment modal
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [submittingProof, setSubmittingProof] = useState(false);
+  const [refundInfo, setRefundInfo] = useState<RefundInfo | null>(null);
 
   const consoleRef = useRef<HTMLDivElement>(null);
 
@@ -68,9 +76,21 @@ export default function Playground() {
         } catch {
           return { raw: jsonInput };
         }
+      case 'none':
+        return {};
       default:
         return { text: textInput };
     }
+  };
+
+  // Decide whether to use file upload or JSON based on inputType and file presence
+  const executeApi = async (proof?: string) => {
+    if (api?.inputType === 'pdf' && fileInput) {
+      return proof
+        ? executeGatewayWithFile(id!, fileInput, proof)
+        : executeGatewayWithFile(id!, fileInput);
+    }
+    return executeGateway(id!, getPayload(), proof);
   };
 
   const handleExecute = async () => {
@@ -81,7 +101,7 @@ export default function Playground() {
     const startTime = Date.now();
 
     try {
-      const result = await executeGateway(id, getPayload());
+      const result = await executeApi();
       setLatency(Date.now() - startTime);
       setResponse(result);
       setConsoleState('200');
@@ -104,15 +124,28 @@ export default function Playground() {
     const startTime = Date.now();
 
     try {
-      const result = await executeGateway(id, getPayload(), txHash);
+      const result = await executeApi(txHash);
       setLatency(Date.now() - startTime);
       setResponse(result);
       setConsoleState('200');
       setPaymentOpen(false);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Payment verification failed');
-      setConsoleState('error');
+      setLatency(Date.now() - startTime);
       setPaymentOpen(false);
+
+      // Check if this is a refund response (upstream failed)
+      if (err.status === 502 && err.data?.status === 'refunded') {
+        setRefundInfo(err.data.refund || {
+          txHash,
+          amount: api.pricePerReq,
+          currency: 'STX',
+          reason: err.data?.message || 'Upstream service unavailable',
+        });
+        setConsoleState('refunded');
+      } else {
+        setErrorMsg(err.message || 'Payment verification failed');
+        setConsoleState('error');
+      }
     } finally {
       setSubmittingProof(false);
     }
@@ -160,6 +193,7 @@ export default function Playground() {
               {api.inputType === 'pdf' && <><FileText className="w-3 h-3" /> PDF Upload</>}
               {api.inputType === 'json' && <><Code2 className="w-3 h-3" /> JSON Body</>}
               {api.inputType === 'form' && <><Image className="w-3 h-3" /> Form Input</>}
+              {api.inputType === 'none' && <><Play className="w-3 h-3" /> No Input</>}
             </label>
 
             {api.inputType === 'text' && (
@@ -235,6 +269,16 @@ export default function Playground() {
                 />
               </div>
             )}
+
+            {api.inputType === 'none' && (
+              <div className="flex-1 flex items-center justify-center border border-white/[0.06] rounded-xl bg-white/[0.02]">
+                <div className="text-center space-y-2">
+                  <Play className="w-8 h-8 text-white/20 mx-auto" />
+                  <p className="text-sm text-white/40">This API requires no input</p>
+                  <p className="text-xs text-white/20">Just click Execute to call the endpoint</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Execute */}
@@ -272,6 +316,8 @@ export default function Playground() {
                     ? 'bg-emerald-400'
                     : consoleState === 'loading'
                     ? 'bg-blue-400 animate-pulse'
+                    : consoleState === 'refunded'
+                    ? 'bg-amber-400'
                     : 'bg-red-400'
                 }`}
               />
@@ -281,6 +327,7 @@ export default function Playground() {
                 {consoleState === '402' && '402 Payment Required'}
                 {consoleState === '200' && '200 OK'}
                 {consoleState === 'error' && 'Error'}
+                {consoleState === 'refunded' && '502 Refunded'}
               </span>
             </div>
           </div>
@@ -375,6 +422,47 @@ export default function Playground() {
                 <div className="mt-3 flex items-center gap-4 text-xs text-white/40">
                   <span>Cost: <span className="text-axiom-orange">{response.cost}</span></span>
                   <span>TX: <span className="font-mono">{response.tx_hash?.slice(0, 12)}...</span></span>
+                </div>
+              </motion.div>
+            )}
+
+            {/* REFUNDED */}
+            {consoleState === 'refunded' && refundInfo && (
+              <motion.div
+                key="refunded"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex-1 flex items-center justify-center"
+              >
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-6 text-center space-y-3 w-full max-w-sm">
+                  <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/20 flex items-center justify-center">
+                    <AlertTriangle className="w-6 h-6 text-amber-400" />
+                  </div>
+                  <div className="text-2xl font-black text-amber-300">Payment Refunded</div>
+                  <p className="text-sm text-white/60">
+                    The upstream API failed to respond. Your payment has been automatically refunded.
+                  </p>
+                  <div className="bg-white/[0.03] rounded-xl p-3 text-left space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-white/40">Amount</span>
+                      <span className="text-emerald-400 font-semibold">{refundInfo.amount} {refundInfo.currency} returned</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-white/40">TX Hash</span>
+                      <span className="text-white/60 font-mono truncate ml-2">{refundInfo.txHash?.slice(0, 16)}...</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-white/40">Reason</span>
+                      <span className="text-white/60 truncate ml-2">{refundInfo.reason}</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-white/40">
+                    Your transaction hash can be reused. Click below to retry.
+                  </p>
+                  <button onClick={handleExecute} className="btn-primary w-full text-sm">
+                    Retry Request
+                  </button>
                 </div>
               </motion.div>
             )}

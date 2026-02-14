@@ -101,6 +101,34 @@ export interface Gateway402Response {
   recipient: string;
   message: string;
   invoiceEndpoint: string;
+  x402Version?: number;
+  network?: string;
+}
+
+// ---- x402 V2 Payment Requirement ----
+export interface X402PaymentRequirement {
+  scheme: string;
+  network: string;
+  maxAmountRequired: string;
+  resource: string;
+  description: string;
+  mimeType: string;
+  payTo: string;
+  maxTimeoutSeconds: number;
+  asset: string;
+  extra: unknown;
+}
+
+export interface X402PaymentRequired {
+  x402Version: number;
+  paymentRequirements: X402PaymentRequirement[];
+}
+
+export interface X402PaymentResponse {
+  success: boolean;
+  transaction: string;
+  payer: string;
+  network: string;
 }
 
 // ---- Create Service Payload ----
@@ -115,7 +143,7 @@ export interface CreateServicePayload {
   providerWallet: string;
   providerName?: string;
   status: 'active' | 'paused' | 'draft';
-  inputType: 'text' | 'pdf' | 'json' | 'form';
+  inputType: 'text' | 'pdf' | 'json' | 'form' | 'none';
   inputSchema?: Record<string, unknown>;
   authHeader?: string;
 }

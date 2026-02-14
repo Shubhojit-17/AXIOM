@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { X, AlertTriangle, Loader2, Wallet, RefreshCw, CheckCircle, Copy, ExternalLink } from 'lucide-react';
@@ -28,6 +28,7 @@ export default function PaymentModal({
   const [txHash, setTxHash] = useState('');
   const [showManualFallback, setShowManualFallback] = useState(false);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walletInProgress = useRef(false);
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -36,16 +37,22 @@ export default function PaymentModal({
       setError('');
       setTxHash('');
       setShowManualFallback(false);
+      walletInProgress.current = false;
     }
     return () => {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     };
   }, [open]);
 
-  const handlePay = async () => {
+  const handlePay = useCallback(async () => {
     if (!invoiceData) return;
 
+    // Lock to prevent double-triggering (React StrictMode, double clicks, etc.)
+    if (walletInProgress.current) return;
+    walletInProgress.current = true;
+
     if (!isConnected) {
+      walletInProgress.current = false;
       connectWallet();
       return;
     }
@@ -54,23 +61,27 @@ export default function PaymentModal({
     setError('');
     setShowManualFallback(false);
 
-    // Show manual fallback after 5 seconds in case wallet callback doesn't fire
+    // Show manual fallback after 8 seconds in case wallet callback doesn't fire
     fallbackTimerRef.current = setTimeout(() => {
       setShowManualFallback(true);
-    }, 5000);
+    }, 8000);
 
     try {
+      // STX memo max is 34 bytes — use short API ID
+      const shortId = invoiceData.apiId.replace(/-/g, '').slice(0, 16);
       const txId = await sendSTX(
         invoiceData.recipient,
         invoiceData.price,
-        `axiom:${invoiceData.apiId}`
+        `ax:${shortId}`
       );
 
       // Wallet callback worked! Clear timer and submit
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+      walletInProgress.current = false;
       onSubmitProof(txId);
     } catch (err: any) {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+      walletInProgress.current = false;
       if (err.message === 'Transaction cancelled by user') {
         setStep('confirm');
         setShowManualFallback(false);
@@ -80,7 +91,25 @@ export default function PaymentModal({
         setShowManualFallback(false);
       }
     }
-  };
+  }, [invoiceData, isConnected, connectWallet, sendSTX, onSubmitProof]);
+
+  // Keep a stable ref to handlePay so the auto-open effect doesn't re-fire
+  const handlePayRef = useRef(handlePay);
+  handlePayRef.current = handlePay;
+
+  // Auto-open Leather wallet when modal opens and wallet is connected
+  useEffect(() => {
+    if (!open || !isConnected || !invoiceData) return;
+
+    // Delay to let the modal render, then auto-trigger wallet
+    const timer = setTimeout(() => {
+      handlePayRef.current();
+    }, 600);
+
+    return () => clearTimeout(timer);
+    // Only re-run when the modal opens/closes — NOT when handlePay changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handleManualSubmit = () => {
     const hash = txHash.trim();
@@ -157,7 +186,7 @@ export default function PaymentModal({
                     </span>
                   </div>
                   <div className="flex justify-between text-sm items-start">
-                    <span className="text-white/50">Recipient</span>
+                    <span className="text-white/50">Escrow Wallet</span>
                     <div className="flex items-center gap-1">
                       <span className="font-mono text-xs break-all text-right max-w-[250px]">
                         {invoiceData.recipient}
@@ -171,14 +200,17 @@ export default function PaymentModal({
                       </button>
                     </div>
                   </div>
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-xs text-emerald-300/80">
+                    <p>Payment is held in escrow. 90% goes to the developer on success. Full refund on failure.</p>
+                  </div>
                 </>
               )}
 
               {/* STEP: Confirm — initial state */}
               {step === 'confirm' && !isSubmitting && (
                 <div className="bg-white/[0.03] rounded-xl p-4 text-xs text-white/50 space-y-1">
-                  <p>Click <strong className="text-white/70">Pay with Wallet</strong> to open your Stacks wallet.</p>
-                  <p>Approve the transaction to unlock this API.</p>
+                  <p>Your wallet will open automatically to approve the escrow payment.</p>
+                  <p>If it doesn't, click <strong className="text-white/70">Pay with Wallet</strong> below.</p>
                 </div>
               )}
 

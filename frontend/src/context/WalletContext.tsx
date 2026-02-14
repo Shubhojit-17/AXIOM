@@ -77,34 +77,33 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const sendSTX = useCallback(
     (recipient: string, amountSTX: number, memo?: string): Promise<string> => {
       return new Promise((resolve, reject) => {
-        let settled = false;
         const amountMicroSTX = Math.round(amountSTX * 1_000_000);
 
-        const settle = (fn: () => void) => {
-          if (!settled) {
-            settled = true;
-            fn();
-          }
-        };
-
-        openSTXTransfer({
-          recipient,
-          amount: amountMicroSTX.toString(),
-          memo: memo || '',
-          network: 'testnet',
-          appDetails: {
-            name: 'AXIOM',
-            icon: window.location.origin + '/vite.svg',
-          },
-          onFinish: (data) => {
-            settle(() => resolve(data.txId));
-          },
-          onCancel: () => {
-            settle(() => reject(new Error('Transaction cancelled by user')));
-          },
-        }).catch((err) => {
-          settle(() => reject(new Error(err?.message || 'Failed to open wallet')));
-        });
+        try {
+          openSTXTransfer({
+            recipient,
+            amount: amountMicroSTX.toString(),
+            memo: memo || '',
+            network: 'testnet',
+            appDetails: {
+              name: 'AXIOM',
+              icon: window.location.origin + '/vite.svg',
+            },
+            onFinish: (data: any) => {
+              const txId = data?.txId || data?.txid || data?.stacksTransaction?.txid;
+              if (txId) {
+                resolve(txId);
+              } else {
+                reject(new Error('No transaction ID returned from wallet'));
+              }
+            },
+            onCancel: () => {
+              reject(new Error('Transaction cancelled by user'));
+            },
+          });
+        } catch (err: any) {
+          reject(new Error(err?.message || 'Failed to open wallet'));
+        }
       });
     },
     []

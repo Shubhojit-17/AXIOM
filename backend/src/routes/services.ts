@@ -52,8 +52,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
  */
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const id = req.params.id as string;
     const service = await prisma.apiService.findUnique({
-      where: { id: req.params.id },
+      where: { id },
     });
 
     if (!service) {
@@ -113,11 +114,12 @@ router.post('/', requireWallet, async (req: Request, res: Response, next: NextFu
  */
 router.put('/:id', requireWallet, async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const id = req.params.id as string;
     const data = UpdateServiceSchema.parse(req.body);
     const wallet = (req as any).walletAddress;
 
     // Verify ownership
-    const existing = await prisma.apiService.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.apiService.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'API service not found' });
     if (existing.providerWallet !== wallet) {
       return res.status(403).json({ error: 'Not authorized to update this service' });
@@ -128,7 +130,7 @@ router.put('/:id', requireWallet, async (req: Request, res: Response, next: Next
     if (data.inputSchema) updateData.inputSchema = JSON.stringify(data.inputSchema);
 
     const updated = await prisma.apiService.update({
-      where: { id: req.params.id },
+      where: { id },
       data: updateData,
     });
 
@@ -144,14 +146,20 @@ router.put('/:id', requireWallet, async (req: Request, res: Response, next: Next
  */
 router.delete('/:id', requireWallet, async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const id = req.params.id as string;
     const wallet = (req as any).walletAddress;
-    const existing = await prisma.apiService.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.apiService.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'API service not found' });
     if (existing.providerWallet !== wallet) {
       return res.status(403).json({ error: 'Not authorized to delete this service' });
     }
 
-    await prisma.apiService.delete({ where: { id: req.params.id } });
+    // Delete related records first to avoid foreign key constraint violations
+    const serviceId = id;
+    await prisma.callLog.deleteMany({ where: { apiId: serviceId } });
+    await prisma.transaction.deleteMany({ where: { apiId: serviceId } });
+    await prisma.usedPaymentProof.deleteMany({ where: { apiId: serviceId } });
+    await prisma.apiService.delete({ where: { id: serviceId } });
     res.json({ message: 'Service deleted' });
   } catch (err) {
     next(err);
@@ -164,17 +172,18 @@ router.delete('/:id', requireWallet, async (req: Request, res: Response, next: N
  */
 router.patch('/:id/status', requireWallet, async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const id = req.params.id as string;
     const { status } = UpdateStatusSchema.parse(req.body);
     const wallet = (req as any).walletAddress;
 
-    const existing = await prisma.apiService.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.apiService.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'API service not found' });
     if (existing.providerWallet !== wallet) {
       return res.status(403).json({ error: 'Not authorized to update this service' });
     }
 
     const updated = await prisma.apiService.update({
-      where: { id: req.params.id },
+      where: { id },
       data: { status },
     });
 

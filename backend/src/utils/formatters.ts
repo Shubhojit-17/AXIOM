@@ -62,6 +62,7 @@ export function formatTransactionForFrontend(tx: any) {
     providerWallet: tx.providerWallet,
     platformFee: tx.platformFee,
     providerEarning: tx.providerEarning,
+    payoutTxHash: tx.payoutTxHash || null,
     responseCode: tx.responseCode,
   };
 }

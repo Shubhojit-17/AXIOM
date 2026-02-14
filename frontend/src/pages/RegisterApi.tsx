@@ -7,7 +7,7 @@ import { useWallet } from '../context/WalletContext';
 import type { CreateServicePayload } from '../lib/types';
 
 const categories = ['AI/ML', 'Crypto Data', 'File Utilities', 'Web Scraping'];
-const inputTypes = ['text', 'pdf', 'json', 'form'] as const;
+const inputTypes = ['text', 'pdf', 'json', 'form', 'none'] as const;
 const methods = ['GET', 'POST'] as const;
 
 export default function RegisterApi() {
@@ -27,7 +27,7 @@ export default function RegisterApi() {
     pricePerReq: 0.1,
     providerName: '',
     status: 'active' as 'active' | 'paused' | 'draft',
-    inputType: 'text' as 'text' | 'pdf' | 'json' | 'form',
+    inputType: 'text' as 'text' | 'pdf' | 'json' | 'form' | 'none',
     authHeader: '',
   });
 
@@ -214,6 +214,7 @@ export default function RegisterApi() {
                   {it === 'pdf' && 'Drag & drop file upload'}
                   {it === 'json' && 'JSON body editor'}
                   {it === 'form' && 'Image upload field'}
+                  {it === 'none' && 'No input required'}
                 </p>
               </button>
             ))}

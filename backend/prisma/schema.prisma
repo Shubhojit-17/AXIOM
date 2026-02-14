@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -49,8 +49,9 @@ model Transaction {
   platformFee     Float
   providerEarning Float
   txHash          String   @unique  // Payment proof - must be unique (non-reusable)
+  payoutTxHash    String?  // Escrow payout tx hash (to developer) or refund tx hash (to user)
   timestamp       DateTime @default(now())
-  status          String   @default("pending") // confirmed | pending | failed
+  status          String   @default("pending") // escrowed | settled | payout_pending | refunded | pending | failed
   responseCode    Int?     // 200, 402, etc.
 
   api             ApiService @relation(fields: [apiId], references: [id])

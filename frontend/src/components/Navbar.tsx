@@ -89,7 +89,7 @@ export default function Navbar() {
           {isConnected && (
             <div className="flex items-center bg-white/[0.04] border border-white/[0.06] rounded-full p-0.5 text-xs">
               <button
-                onClick={() => setRole('user')}
+                onClick={() => { setRole('user'); navigate('/marketplace'); }}
                 className={`px-3.5 py-1.5 rounded-full transition-all duration-200 ${
                   role === 'user'
                     ? 'bg-axiom-orange text-white shadow-sm shadow-axiom-orange/20'
@@ -99,7 +99,7 @@ export default function Navbar() {
                 User
               </button>
               <button
-                onClick={() => setRole('developer')}
+                onClick={() => { setRole('developer'); navigate('/developer/dashboard'); }}
                 className={`px-3.5 py-1.5 rounded-full transition-all duration-200 ${
                   role === 'developer'
                     ? 'bg-glow-violet text-white shadow-sm shadow-glow-violet/20'

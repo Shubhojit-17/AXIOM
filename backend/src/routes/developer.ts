@@ -21,7 +21,8 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction) => 
       where: { providerWallet: wallet },
     });
 
-    const confirmedTx = transactions.filter(t => t.status === 'confirmed');
+    const successStatuses = ['confirmed', 'escrowed', 'settled', 'payout_pending'];
+    const confirmedTx = transactions.filter(t => successStatuses.includes(t.status));
     const totalEarned = confirmedTx.reduce((sum, t) => sum + t.providerEarning, 0);
     const totalCalls = transactions.length;
 
@@ -83,7 +84,7 @@ router.get('/earnings', async (req: Request, res: Response, next: NextFunction) 
     const transactions = await prisma.transaction.findMany({
       where: {
         providerWallet: wallet,
-        status: 'confirmed',
+        status: { in: ['confirmed', 'escrowed', 'settled', 'payout_pending'] },
         timestamp: { gte: startDate },
       },
       orderBy: { timestamp: 'asc' },
@@ -158,7 +159,10 @@ router.get('/feed', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     const recentTx = await prisma.transaction.findMany({
-      where: { providerWallet: wallet, status: 'confirmed' },
+      where: {
+        providerWallet: wallet,
+        status: { in: ['confirmed', 'escrowed', 'settled', 'payout_pending'] },
+      },
       orderBy: { timestamp: 'desc' },
       take: 10,
     });
