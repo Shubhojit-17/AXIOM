@@ -77,7 +77,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const sendSTX = useCallback(
     (recipient: string, amountSTX: number, memo?: string): Promise<string> => {
       return new Promise((resolve, reject) => {
+        let settled = false;
         const amountMicroSTX = Math.round(amountSTX * 1_000_000);
+
+        const settle = (fn: () => void) => {
+          if (!settled) {
+            settled = true;
+            fn();
+          }
+        };
 
         openSTXTransfer({
           recipient,
@@ -89,13 +97,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             icon: window.location.origin + '/vite.svg',
           },
           onFinish: (data) => {
-            resolve(data.txId);
+            settle(() => resolve(data.txId));
           },
           onCancel: () => {
-            reject(new Error('Transaction cancelled by user'));
+            settle(() => reject(new Error('Transaction cancelled by user')));
           },
         }).catch((err) => {
-          reject(new Error(err?.message || 'Failed to open wallet'));
+          settle(() => reject(new Error(err?.message || 'Failed to open wallet')));
         });
       });
     },

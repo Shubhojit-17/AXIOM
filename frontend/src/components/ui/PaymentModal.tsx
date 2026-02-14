@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
-import { X, AlertTriangle, CheckCircle, Loader2, Wallet, RefreshCw } from 'lucide-react';
+import { X, AlertTriangle, Loader2, Wallet, RefreshCw, CheckCircle, Copy, ExternalLink } from 'lucide-react';
 import type { Gateway402Response } from '../../lib/types';
 import { useWallet } from '../../context/WalletContext';
 
@@ -13,7 +13,7 @@ interface PaymentModalProps {
   isSubmitting: boolean;
 }
 
-type PaymentStep = 'confirm' | 'signing' | 'error';
+type PaymentStep = 'confirm' | 'wallet-opened' | 'manual' | 'error';
 
 export default function PaymentModal({
   open,
@@ -25,13 +25,21 @@ export default function PaymentModal({
   const { sendSTX, isConnected, connectWallet } = useWallet();
   const [step, setStep] = useState<PaymentStep>('confirm');
   const [error, setError] = useState('');
+  const [txHash, setTxHash] = useState('');
+  const [showManualFallback, setShowManualFallback] = useState(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset state when modal opens/closes
   useEffect(() => {
     if (open) {
       setStep('confirm');
       setError('');
+      setTxHash('');
+      setShowManualFallback(false);
     }
+    return () => {
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    };
   }, [open]);
 
   const handlePay = async () => {
@@ -42,33 +50,65 @@ export default function PaymentModal({
       return;
     }
 
-    try {
-      setStep('signing');
-      setError('');
+    setStep('wallet-opened');
+    setError('');
+    setShowManualFallback(false);
 
+    // Show manual fallback after 5 seconds in case wallet callback doesn't fire
+    fallbackTimerRef.current = setTimeout(() => {
+      setShowManualFallback(true);
+    }, 5000);
+
+    try {
       const txId = await sendSTX(
         invoiceData.recipient,
         invoiceData.price,
         `axiom:${invoiceData.apiId}`
       );
 
-      // Transaction signed — submit proof to backend
+      // Wallet callback worked! Clear timer and submit
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       onSubmitProof(txId);
     } catch (err: any) {
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       if (err.message === 'Transaction cancelled by user') {
         setStep('confirm');
+        setShowManualFallback(false);
       } else {
-        setError(err.message || 'Transaction failed');
-        setStep('error');
+        // Wallet opened but callback failed — show manual input
+        setStep('manual');
+        setShowManualFallback(false);
       }
     }
   };
 
+  const handleManualSubmit = () => {
+    const hash = txHash.trim();
+    if (hash.length >= 10) {
+      onSubmitProof(hash);
+    }
+  };
+
+  const handleSwitchToManual = () => {
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    setStep('manual');
+    setShowManualFallback(false);
+  };
+
   const handleClose = () => {
-    if (isSubmitting) return; // Don't close while verifying payment on backend
+    if (isSubmitting) return;
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     setStep('confirm');
     setError('');
+    setTxHash('');
+    setShowManualFallback(false);
     onClose();
+  };
+
+  const copyRecipient = () => {
+    if (invoiceData?.recipient) {
+      navigator.clipboard.writeText(invoiceData.recipient);
+    }
   };
 
   return (
@@ -116,43 +156,85 @@ export default function PaymentModal({
                       {invoiceData.price} {invoiceData.currency}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between text-sm items-start">
                     <span className="text-white/50">Recipient</span>
-                    <span className="font-mono text-xs break-all">{invoiceData.recipient}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-xs break-all text-right max-w-[250px]">
+                        {invoiceData.recipient}
+                      </span>
+                      <button
+                        onClick={copyRecipient}
+                        className="p-1 hover:bg-white/[0.05] rounded flex-shrink-0"
+                        title="Copy address"
+                      >
+                        <Copy className="w-3 h-3 text-white/30" />
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
 
-              {/* Step-specific content */}
+              {/* STEP: Confirm — initial state */}
               {step === 'confirm' && !isSubmitting && (
                 <div className="bg-white/[0.03] rounded-xl p-4 text-xs text-white/50 space-y-1">
-                  <p>Click <strong className="text-white/70">Pay with Wallet</strong> below to open your Stacks wallet.</p>
-                  <p>Approve the transaction in your wallet to unlock this API.</p>
+                  <p>Click <strong className="text-white/70">Pay with Wallet</strong> to open your Stacks wallet.</p>
+                  <p>Approve the transaction to unlock this API.</p>
                 </div>
               )}
 
-              {step === 'signing' && !isSubmitting && (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-blue-300 font-medium">Waiting for wallet approval...</p>
-                      <p className="text-xs text-white/40 mt-1">Confirm the transaction in your Stacks wallet</p>
+              {/* STEP: Wallet opened — waiting for callback */}
+              {step === 'wallet-opened' && !isSubmitting && (
+                <div className="space-y-3">
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
+                      <div>
+                        <p className="text-sm text-blue-300 font-medium">Wallet opened</p>
+                        <p className="text-xs text-white/40 mt-1">Confirm the transaction in your Leather wallet</p>
+                      </div>
                     </div>
                   </div>
-                  <p className="text-xs text-white/30">
-                    Don't see the wallet popup?{' '}
-                    <button
-                      onClick={() => setStep('confirm')}
-                      className="text-blue-400 hover:text-blue-300 underline"
-                    >
-                      Go back
-                    </button>{' '}
-                    and try again.
-                  </p>
+
+                  {/* Fallback appears after 5 seconds */}
+                  {showManualFallback && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                      <p className="text-xs text-amber-300/80">
+                        Already confirmed in your wallet? The auto-detection may not work with some wallet versions.
+                      </p>
+                      <button
+                        onClick={handleSwitchToManual}
+                        className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Enter transaction hash manually
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
+              {/* STEP: Manual tx hash input */}
+              {step === 'manual' && !isSubmitting && (
+                <div className="space-y-3">
+                  <div className="bg-white/[0.03] rounded-xl p-4 text-xs text-white/50 space-y-2">
+                    <p className="text-white/70 font-medium">Paste your transaction hash</p>
+                    <p>After confirming in your wallet, copy the transaction ID from your wallet's activity and paste it below.</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/40 block mb-2">Transaction Hash</label>
+                    <input
+                      type="text"
+                      value={txHash}
+                      onChange={(e) => setTxHash(e.target.value)}
+                      placeholder="0x..."
+                      className="input-glass font-mono text-sm"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Verifying after submit */}
               {isSubmitting && (
                 <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-4 flex items-center gap-3">
                   <Loader2 className="w-5 h-5 text-violet-400 animate-spin flex-shrink-0" />
@@ -163,15 +245,24 @@ export default function PaymentModal({
                 </div>
               )}
 
+              {/* Error state */}
               {step === 'error' && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 space-y-2">
                   <p className="text-sm text-red-300">{error}</p>
-                  <button
-                    onClick={() => { setStep('confirm'); setError(''); }}
-                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
-                  >
-                    <RefreshCw className="w-3 h-3" /> Try again
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => { setStep('confirm'); setError(''); }}
+                      className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Try again
+                    </button>
+                    <button
+                      onClick={handleSwitchToManual}
+                      className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Enter hash manually
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -185,33 +276,55 @@ export default function PaymentModal({
               >
                 Cancel
               </button>
-              <button
-                onClick={handlePay}
-                disabled={isSubmitting}
-                className="btn-primary flex-1 text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {step === 'signing' && !isSubmitting ? (
-                  <>
-                    <RefreshCw className="w-4 h-4" />
-                    Retry Payment
-                  </>
-                ) : isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Verifying...
-                  </>
-                ) : !isConnected ? (
-                  <>
-                    <Wallet className="w-4 h-4" />
-                    Connect Wallet
-                  </>
-                ) : (
-                  <>
-                    <Wallet className="w-4 h-4" />
-                    Pay with Wallet
-                  </>
-                )}
-              </button>
+
+              {/* Main action button changes based on step */}
+              {step === 'manual' ? (
+                <button
+                  onClick={handleManualSubmit}
+                  disabled={txHash.trim().length < 10 || isSubmitting}
+                  className="btn-primary flex-1 text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Verifying...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      Submit & Unlock
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handlePay}
+                  disabled={isSubmitting}
+                  className="btn-primary flex-1 text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Verifying...
+                    </>
+                  ) : step === 'wallet-opened' ? (
+                    <>
+                      <RefreshCw className="w-4 h-4" />
+                      Retry Wallet
+                    </>
+                  ) : !isConnected ? (
+                    <>
+                      <Wallet className="w-4 h-4" />
+                      Connect Wallet
+                    </>
+                  ) : (
+                    <>
+                      <Wallet className="w-4 h-4" />
+                      Pay with Wallet
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </Dialog.Content>
