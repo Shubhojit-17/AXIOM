@@ -13,16 +13,10 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
 // --- Global Middleware ---
+// Handle CORS preflight for all routes
+app.options('*', cors());
 app.use(cors({
-  origin: function (origin, callback) {
-    const allowed = [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'];
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin || allowed.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(null, true); // Allow all in case of deployment URL variations
-    }
-  },
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-wallet-address', 'payment-signature', 'Authorization'],
