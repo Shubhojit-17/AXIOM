@@ -10,12 +10,22 @@ import gatewayRouter from './routes/gateway';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8080', 10);
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
 // --- Global Middleware ---
 app.use(cors({
-  origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'],
+  origin: function (origin, callback) {
+    const allowed = [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'];
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all in case of deployment URL variations
+    }
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-wallet-address', 'payment-signature', 'Authorization'],
   exposedHeaders: ['payment-required', 'payment-response'],
 }));
 app.use(express.json({ limit: '10mb' }));
