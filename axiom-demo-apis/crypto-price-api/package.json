@@ -1,7 +1,7 @@
 {
   "name": "crypto-price-api",
   "version": "1.0.0",
-  "description": "Real-time cryptocurrency price API using CoinGecko",
+  "description": "Real-time cryptocurrency price API using Binance",
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",

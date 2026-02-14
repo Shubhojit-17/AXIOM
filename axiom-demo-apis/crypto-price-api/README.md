@@ -1,6 +1,18 @@
 # Crypto Price API
 
-Real-time cryptocurrency price lookup using the [CoinGecko](https://www.coingecko.com/en/api) public API. **No API key required.**
+Real-time cryptocurrency price lookup using the [Binance](https://www.binance.com/en/binance-api) public ticker API. **No API key required.**
+
+Prices are cached in-memory for 30 seconds to avoid excessive requests.
+
+---
+
+## Supported Coins
+
+| Query value | Binance Symbol |
+|---|---|
+| `bitcoin` / `btc` | BTCUSDT |
+| `ethereum` / `eth` | ETHUSDT |
+| `solana` / `sol` | SOLUSDT |
 
 ---
 
@@ -13,10 +25,10 @@ Health check.
 **Response:**
 
 ```json
-{ "status": "ok", "service": "crypto-price" }
+{ "status": "ok", "service": "crypto-price", "source": "binance" }
 ```
 
-### `GET /price?coin=<coin_id>`
+### `GET /price?coin=<coin>`
 
 Get the current USD price for a cryptocurrency.
 
@@ -24,30 +36,38 @@ Get the current USD price for a cryptocurrency.
 
 | Param | Required | Description |
 |---|---|---|
-| `coin` | Yes | CoinGecko coin ID (e.g., `bitcoin`, `ethereum`, `solana`, `stacks`) |
+| `coin` | Yes | Coin name or ticker (e.g., `bitcoin`, `btc`, `ethereum`, `eth`, `solana`, `sol`) |
 
 **Example:**
 
-```
-GET /price?coin=bitcoin
+```bash
+curl "https://your-app.onrender.com/price?coin=bitcoin"
 ```
 
 **Response:**
 
 ```json
 {
+  "success": true,
   "coin": "bitcoin",
-  "usd": 52000
+  "symbol": "BTCUSDT",
+  "priceUsd": 43211.23,
+  "source": "binance",
+  "cached": false,
+  "timestamp": "2026-02-14T12:30:00.000Z"
 }
 ```
+
+Subsequent requests within 30 seconds return `"cached": true`.
 
 **Errors:**
 
 | Status | Meaning |
 |---|---|
-| 400 | Missing `coin` query parameter |
-| 404 | Coin not found on CoinGecko |
-| 5xx | CoinGecko API or server error |
+| 400 | Missing or unsupported `coin` query parameter |
+| 502 | Invalid data received from Binance |
+| 504 | Binance API request timed out |
+| 5xx | Binance API or server error |
 
 ---
 
@@ -65,7 +85,7 @@ npm run dev
 |---|---|---|
 | `PORT` | No | Server port (default: 3003) |
 
-No API key is needed — CoinGecko's public endpoint is used.
+No API key is needed — Binance's public ticker endpoint is used.
 
 ## Deploy to Render
 
