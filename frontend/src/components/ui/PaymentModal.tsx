@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { X, AlertTriangle, CheckCircle, Loader2, Wallet, RefreshCw } from 'lucide-react';
 import type { Gateway402Response } from '../../lib/types';
 import { useWallet } from '../../context/WalletContext';
@@ -64,7 +65,7 @@ export default function PaymentModal({
   };
 
   const handleClose = () => {
-    if (step === 'signing' || isSubmitting) return; // Don't close while processing
+    if (isSubmitting) return; // Don't close while verifying payment on backend
     setStep('confirm');
     setError('');
     onClose();
@@ -74,7 +75,13 @@ export default function PaymentModal({
     <Dialog.Root open={open} onOpenChange={(v) => !v && handleClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] animate-fade-in" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-full max-w-md">
+        <Dialog.Content
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-full max-w-md"
+          aria-describedby={undefined}
+        >
+          <VisuallyHidden.Root>
+            <Dialog.Title>Payment Required</Dialog.Title>
+          </VisuallyHidden.Root>
           <div className="glass-card rounded-2xl p-0 overflow-hidden animate-fade-in">
             {/* Header */}
             <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-4 flex items-center justify-between">
@@ -88,7 +95,7 @@ export default function PaymentModal({
               <Dialog.Close asChild>
                 <button
                   className="p-1 rounded-lg hover:bg-white/[0.05]"
-                  disabled={step === 'signing' || isSubmitting}
+                  disabled={isSubmitting}
                 >
                   <X className="w-4 h-4 text-white/40" />
                 </button>
@@ -124,13 +131,25 @@ export default function PaymentModal({
                 </div>
               )}
 
-              {step === 'signing' && (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center gap-3">
-                  <Loader2 className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
-                  <div>
-                    <p className="text-sm text-blue-300 font-medium">Waiting for wallet approval...</p>
-                    <p className="text-xs text-white/40 mt-1">Confirm the transaction in your Stacks wallet</p>
+              {step === 'signing' && !isSubmitting && (
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-blue-300 font-medium">Waiting for wallet approval...</p>
+                      <p className="text-xs text-white/40 mt-1">Confirm the transaction in your Stacks wallet</p>
+                    </div>
                   </div>
+                  <p className="text-xs text-white/30">
+                    Don't see the wallet popup?{' '}
+                    <button
+                      onClick={() => setStep('confirm')}
+                      className="text-blue-400 hover:text-blue-300 underline"
+                    >
+                      Go back
+                    </button>{' '}
+                    and try again.
+                  </p>
                 </div>
               )}
 
@@ -162,19 +181,19 @@ export default function PaymentModal({
               <button
                 onClick={handleClose}
                 className="btn-secondary flex-1 text-sm py-2.5"
-                disabled={step === 'signing' || isSubmitting}
+                disabled={isSubmitting}
               >
                 Cancel
               </button>
               <button
                 onClick={handlePay}
-                disabled={step === 'signing' || isSubmitting}
+                disabled={isSubmitting}
                 className="btn-primary flex-1 text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {step === 'signing' ? (
+                {step === 'signing' && !isSubmitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Awaiting Wallet...
+                    <RefreshCw className="w-4 h-4" />
+                    Retry Payment
                   </>
                 ) : isSubmitting ? (
                   <>

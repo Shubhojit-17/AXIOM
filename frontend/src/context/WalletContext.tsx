@@ -81,8 +81,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
         openSTXTransfer({
           recipient,
-          amount: BigInt(amountMicroSTX),
+          amount: amountMicroSTX.toString(),
           memo: memo || '',
+          network: 'testnet',
           appDetails: {
             name: 'AXIOM',
             icon: window.location.origin + '/vite.svg',
@@ -93,6 +94,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           onCancel: () => {
             reject(new Error('Transaction cancelled by user'));
           },
+        }).catch((err) => {
+          reject(new Error(err?.message || 'Failed to open wallet'));
         });
       });
     },
