@@ -36,13 +36,13 @@ router.get('/:apiId/invoice', async (req: Request, res: Response, next: NextFunc
       apiName: api.name,
       price: api.pricePerReq,
       currency: 'STX',
-      recipient: PLATFORM_WALLET,
+      recipient: api.providerWallet,
       memo: `axiom:${api.id}:${Date.now()}`,
       method: api.method,
       inputType: api.inputType,
       message: 'Send exactly this amount of STX to the recipient address. Include the memo. Then retry with paymentProof set to your tx hash.',
       exampleTx: {
-        to: PLATFORM_WALLET,
+        to: api.providerWallet,
         amount: api.pricePerReq,
         memo: `axiom:${api.id}:${Date.now()}`,
         asset: 'STX',
@@ -123,7 +123,7 @@ router.post('/:apiId/execute', async (req: Request, res: Response, next: NextFun
         apiName: api.name,
         price: api.pricePerReq,
         currency: 'STX',
-        recipient: PLATFORM_WALLET,
+        recipient: api.providerWallet,
         message: 'Pay-per-request enforced via HTTP 402. Provide paymentProof (tx hash) to proceed.',
         invoiceEndpoint: `/gateway/${apiId}/invoice`,
       });
@@ -154,7 +154,7 @@ router.post('/:apiId/execute', async (req: Request, res: Response, next: NextFun
     }
 
     // 4. Verify the transaction (stub for MVP)
-    const verification = await verifyStacksTx(paymentProof, api.pricePerReq, PLATFORM_WALLET);
+    const verification = await verifyStacksTx(paymentProof, api.pricePerReq, api.providerWallet);
     if (!verification.valid) {
       await prisma.callLog.create({
         data: {
