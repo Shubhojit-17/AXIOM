@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { AppConfig, showConnect, UserSession } from '@stacks/connect';
+import { AppConfig, showConnect, UserSession, openSTXTransfer } from '@stacks/connect';
 
 export type Role = 'user' | 'developer';
 
@@ -9,6 +9,7 @@ interface WalletContextType {
   setRole: (r: Role) => void;
   connectWallet: () => void;
   disconnectWallet: () => void;
+  sendSTX: (recipient: string, amountSTX: number, memo?: string) => Promise<string>;
   isConnected: boolean;
 }
 
@@ -18,6 +19,7 @@ const WalletContext = createContext<WalletContextType>({
   setRole: () => {},
   connectWallet: () => {},
   disconnectWallet: () => {},
+  sendSTX: () => Promise.reject(new Error('Not connected')),
   isConnected: false,
 });
 
@@ -72,6 +74,31 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('axiom_wallet');
   }, []);
 
+  const sendSTX = useCallback(
+    (recipient: string, amountSTX: number, memo?: string): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const amountMicroSTX = Math.round(amountSTX * 1_000_000);
+
+        openSTXTransfer({
+          recipient,
+          amount: BigInt(amountMicroSTX),
+          memo: memo || '',
+          appDetails: {
+            name: 'AXIOM',
+            icon: window.location.origin + '/vite.svg',
+          },
+          onFinish: (data) => {
+            resolve(data.txId);
+          },
+          onCancel: () => {
+            reject(new Error('Transaction cancelled by user'));
+          },
+        });
+      });
+    },
+    []
+  );
+
   const setRole = useCallback((r: Role) => {
     setRoleState(r);
     localStorage.setItem('axiom_role', r);
@@ -85,6 +112,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setRole,
         connectWallet,
         disconnectWallet,
+        sendSTX,
         isConnected: !!wallet,
       }}
     >
